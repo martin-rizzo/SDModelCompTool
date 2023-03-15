@@ -1,7 +1,7 @@
 import React, { Component } from "react";
-import PromptsSidebar from "./PromptsSidebar";
+import TopBar  from "./TopBar"
+import MenuSidebar from "./MenuSidebar";
 import ModelSelector from "./ModelSelector";
-import MainMenu from "./MainMenu";
 
 // import "semantic-ui-css/semantic.min.css";
 
@@ -36,8 +36,15 @@ class App extends Component {
   render() {
     return (
       <div className="App">
-        <MainMenu onShowMenu={ (state) => this.setState({ showMenu:state }) } />
-        <PromptsSidebar visible={this.state.showMenu}>
+        <TopBar
+          menuButtonLeft={true}
+          menuButtonDown={false}
+          onMenuButtonClick={ (state) => this.setState({ showMenu:state }) }
+          />
+        <MenuSidebar
+          visible={this.state.showMenu}
+          left={true}
+          >
         <Grid padded>
 
           <Grid.Column
@@ -98,7 +105,7 @@ class App extends Component {
             </Grid>
           </Grid.Column>
         </Grid>
-        </PromptsSidebar>
+        </MenuSidebar>
       </div>
     );
   }
