@@ -34,6 +34,6 @@ If you would like to contribute to this project, please follow these steps:
 
 ## Lincense
 
-Copyright (c) 2023 Martin Rizzo
-This project is licensed under the MIT license.
+Copyright (c) 2023 Martin Rizzo  
+This project is licensed under the MIT license.  
 See the ["LICENSE"](LICENSE) file for details.
