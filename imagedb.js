@@ -17,6 +17,11 @@ const CHUNK_TYPE_LENGTH = 4;
 const CHUNK_CRC_LENGTH = 4;
 const TEXT_CHUNK_TYPE = 'tEXt';
 
+// imagedb directories
+const IMAGEDB_DIR           = 'public/imagedb/'
+const IMAGEDB_MODEL_DIR     = IMAGEDB_DIR + 'model-prompts/';
+const IMAGEDB_EMBEDDING_DIR = IMAGEDB_DIR + 'embedding-prompts/'
+
 
 //--------------------------------- HELPERS --------------------------------
 
@@ -122,9 +127,6 @@ function crc32(buffer) {
  *                               directory.
  */
 function forEachFile(callback, directory, extension = '*') {
-  const fs = require('fs');
-  const path = require('path');
-
   fs.readdirSync(directory).forEach((file) => {
     const filePath = path.join(directory, file);
     const fileExtension = path.extname(filePath).toLowerCase().substring(1);
@@ -171,11 +173,9 @@ function extractTextFromPNG(filePath) {
 
 function convertToJPG(filePath) {
   console.log(`Processing file: ${filePath}`);
-  const inputPath = path.resolve(filePath);
+  const inputPath  = path.resolve(filePath);
   const outputPath = path.resolve(`${path.dirname(inputPath)}/${path.basename(inputPath, '.png')}.jpg`);
-  sharp(inputPath)
-    .jpeg()
-    .toFile(outputPath)
+  sharp(inputPath).jpeg().toFile(outputPath)
     .then(() => {
       console.log(`The file ${inputPath} was successfully converted to ${outputPath}.`);
     })
@@ -187,5 +187,6 @@ function convertToJPG(filePath) {
 //================================= START =================================//
 
 
-forEachFile(convertToJPG, 'public/model-prompts', 'png');
+forEachFile(convertToJPG, IMAGEDB_MODEL_DIR, 'png');
+//forEachFile(convertToJPG, 'public/imagedb/embedding-prompts', '*.png');
 
