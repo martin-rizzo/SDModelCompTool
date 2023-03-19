@@ -114,29 +114,26 @@ function crc32(buffer) {
 }
 
 /**
- * Calls the given callback function for each file in the specified directory
- * with the specified extension (if provided), or for all files in the
- * directory (if no extension is provided).
- *
- * @param {function} callback  - The callback function to call for each file.
- *                               This function should take the file path as
- * @param {string}  directory  - The directory to search for files.
- * @param {string} [extension] - The file extension to search for (optional).
- *                               If no extension is provided, the callback
- *                               function will be called for all files in the
- *                               directory.
+ * Searches for files in the specified directory and its subdirectories.
+ * @param {string} directory - The directory to search in.
+ * @param {string} filter - The file filter. Defaults to '*' (all files).
+ * @returns {string[]} - An array containing the paths of the found files.
  */
-function forEachFile(callback, directory, extension = '*') {
-  fs.readdirSync(directory).forEach((file) => {
-    const filePath = path.join(directory, file);
-    const fileExtension = path.extname(filePath).toLowerCase().substring(1);
-
-    if (fs.statSync(filePath).isDirectory()) {
-      forEachFile(callback, filePath, extension);
-    } else if (extension === '*' || fileExtension === extension.toLowerCase()) {
-      callback(filePath);
+function findFiles(directory, filter = '*') {
+  let   results   = [];  
+  const extension = (filter.startsWith('*.') ? filter.slice(2) : filter)
+                    .toLowerCase();
+  for (const file of fs.readdirSync(directory)) {
+    const filePath = path.join(directory, file), stat = fs.statSync(filePath);
+    if (stat.isDirectory()) {
+      results = results.concat( findFiles(filePath, filter) );
+    } else if (stat.isFile()) {
+      if (extension === '*' ||
+          extension === path.extname(filePath).toLowerCase().substring(1))
+      { results.push(filePath); }
     }
-  });
+  }
+  return results;
 }
 
 
@@ -187,6 +184,5 @@ function convertToJPG(filePath) {
 //================================= START =================================//
 
 
-forEachFile(convertToJPG, IMAGEDB_MODEL_DIR, 'png');
-//forEachFile(convertToJPG, 'public/imagedb/embedding-prompts', '*.png');
+findFiles(IMAGEDB_MODEL_DIR,'*.PNG').forEach(convertToJPG);
 
