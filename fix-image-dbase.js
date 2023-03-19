@@ -1,12 +1,24 @@
 #!/usr/bin/env node
+//  NodeJS code to fix the images and data contained 'public/model-prompts'
+//
+//  https://github.com/martin-rizzo/sdcompare-web
+//  by Martin Rizzo
 
-const fs = require('fs');
+requireModules([ 'fs', 'path', 'sharp' ]);
+const fs    = require('fs');
+const path  = require('path');
+const sharp = require('sharp');
+styledLog('check', 'all modules loaded successfully');
+
 
 const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
 const CHUNK_SIZE_LENGTH = 4;
 const CHUNK_TYPE_LENGTH = 4;
 const CHUNK_CRC_LENGTH = 4;
 const TEXT_CHUNK_TYPE = 'tEXt';
+
+
+//--------------------------------- HELPERS --------------------------------
 
 function readChunkHeader(chunkData) {
   const chunkSize = readUInt32BE(chunkData, 0);
@@ -38,6 +50,36 @@ function extractChunks(filePath) {
 }
 
 /**
+ * Logs messages with different styles.
+ * @param {string} style - The style of message: check, warn, error, wait.
+ * @param {string} message - The message to be logged.
+ */
+function styledLog(style, message) {
+  if (style === 'check') {
+    console.log(' \x1b[32m%s\x1b[0m', `✓ ${message}`);
+  } else if (style === 'warn') {
+    console.log(' \x1b[33m%s\x1b[0m', `! ${message}`);
+  } else if (style === 'error') {
+    console.log(' \x1b[31m%s\x1b[0m', `x ${message}`);
+  } else if (style === 'wait') {
+    console.log(' \x1b[33m%s\x1b[0m', `. ${message}...`);
+  } else {
+    console.log(message);
+  }
+}
+
+function requireModules(modules) {
+  for (let module of modules) {
+    try { require(module); } catch (err) {
+      console.error('  The sharp library is not installed.');
+      console.error('  Please make sure the module is installed by running ' +
+                    `"npm install ${module}"`);
+      process.exit(1);
+    }
+  }
+}
+
+/**
  * Reads an unsigned 32-bit integer from a buffer at the specified offset,
  * using big-endian byte order.
  * @param {Buffer} buffer - The buffer to read from.
@@ -66,6 +108,34 @@ function crc32(buffer) {
   return (crc ^ xorout) >>> 0;
 }
 
+/**
+ * Calls the given callback function for each file in the specified directory
+ * with the specified extension (if provided), or for all files in the
+ * directory (if no extension is provided).
+ *
+ * @param {function} callback  - The callback function to call for each file.
+ *                               This function should take the file path as
+ * @param {string}  directory  - The directory to search for files.
+ * @param {string} [extension] - The file extension to search for (optional).
+ *                               If no extension is provided, the callback
+ *                               function will be called for all files in the
+ *                               directory.
+ */
+function forEachFile(callback, directory, extension = '*') {
+  const fs = require('fs');
+  const path = require('path');
+
+  fs.readdirSync(directory).forEach((file) => {
+    const filePath = path.join(directory, file);
+    const fileExtension = path.extname(filePath).toLowerCase().substring(1);
+
+    if (fs.statSync(filePath).isDirectory()) {
+      forEachFile(callback, filePath, extension);
+    } else if (extension === '*' || fileExtension === extension.toLowerCase()) {
+      callback(filePath);
+    }
+  });
+}
 
 
 function extractTextFromPNG(filePath) {
@@ -98,6 +168,24 @@ function extractTextFromPNG(filePath) {
   return textObject;
 }
 
-// Example usage:
-const text = extractTextFromPNG("example.png");
-console.log(text.parameters);
+
+function convertToJPG(filePath) {
+  console.log(`Processing file: ${filePath}`);
+  const inputPath = path.resolve(filePath);
+  const outputPath = path.resolve(`${path.dirname(inputPath)}/${path.basename(inputPath, '.png')}.jpg`);
+  sharp(inputPath)
+    .jpeg()
+    .toFile(outputPath)
+    .then(() => {
+      console.log(`The file ${inputPath} was successfully converted to ${outputPath}.`);
+    })
+    .catch((error) => {
+      console.error(`An error occurred while converting the file ${inputPath}: ${error}`);
+    });
+}
+
+//================================= START =================================//
+
+
+forEachFile(convertToJPG, 'public/model-prompts', 'png');
+
