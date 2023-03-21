@@ -73,6 +73,70 @@ function findFiles(directory, filter = '*') {
   return results;
 }
 
+/**
+ * Modifies the file extension of a file path.
+ * @param {string} filePath - The file path to modify.
+ * @param {string} extension - The new extension to set.
+ * @returns {string} - The modified file path with the new extension.
+ */
+function modifyFilePathExtension(filePath, extension) {
+  if (extension === undefined) { return filePath; }
+  if (!extension.startsWith('.')) { extension = '.' + extension; }
+  const dotIndex = filePath.lastIndexOf('.');
+  if (dotIndex !== -1) {
+    var modifiedPath = filePath.slice(0, dotIndex) + extension;
+  } else {
+    var modifiedPath = filePath + extension;
+  }
+  return modifiedPath;
+}
+
+/**
+ * Returns a unique file name based on the path to the original file.
+ * If a file with the same name already exists, a number is added to the
+ * end of the name until a file name that is not in use is found.
+ * @param {string} filePath - Path to the original file.
+ * @returns {string} - Path to the file with unique name.
+ */
+function getUniqueFileName(filePath, extension1, extension2) {
+  
+  const parsedPath = path.parse(filePath);
+  if (extension1 === undefined) { extension1 = parsedPath.ext; }
+  let newFilePath1 = modifyFilePathExtension(filePath, extension1);
+  let newFilePath2 = modifyFilePathExtension(filePath, extension2);
+  let i = 1;
+  while (fs.existsSync(newFilePath1) ||
+         (extension2 !== undefined && fs.existsSync(newFilePath2)))
+  {
+    newFilePath1 = path.join(
+      parsedPath.dir, `${parsedPath.name}-${i}${extension1}`
+    );
+    if (extension2 !== undefined) {
+      newFilePath2 = path.join(
+        parsedPath.dir, `${parsedPath.name}-${i}${extension2}`
+      )
+    }
+    i++;
+  }
+  return newFilePath1;
+}
+
+/**
+ * Get a shortened version of a full path string
+ * @param {string} fullPath - The full path to the file
+ * @returns {string} - The shortened path (dir name + file name and extension)
+ */
+function getShortName(fullPath) {
+  const lengthLimit          = 40;
+  const directoryName        = path.basename(path.dirname(fullPath));
+  const fileNameAndExtension = path.basename(fullPath);
+  let shortenedPath = `${directoryName}/${fileNameAndExtension}`;
+  if (shortenedPath.length > lengthLimit) {
+    shortenedPath = `...${shortenedPath.slice(3-lengthLimit)}`;
+  }
+  return '"'+shortenedPath+'"';
+}
+
 //---------------------------- SCREEN MESSAGES ----------------------------//
 
 const CHECK = 0, WARN = 1, ERROR = 2, WAIT = 3, VERB = 4;
@@ -168,22 +232,33 @@ function extractTextFromPNG(filePath) {
 
 //------------------------------ OPERATIONS -------------------------------//
 
-function convertPNGtoJPGTx(pngFilePath) {
-  const text = extractTextFromPNG(pngFilePath);
-  //console.log(text.parameters);
-  
-  /*
-  console.logx(WAIT|VERB,`Processing file: ${pngFilePath}`);
-  const inputPath  = path.resolve(pngFilePath);
-  const outputPath = path.resolve(`${path.dirname(inputPath)}/${path.basename(inputPath, '.png')}.jpg`);
-  sharp(inputPath).jpeg().toFile(outputPath)
-    .then(() => {
-      console.logx(CHECK,`The file ${inputPath} was successfully converted to ${outputPath}.`);
-    })
-    .catch((error) => {
-      console.logx(ERROR,`An error occurred while converting the file ${inputPath}: ${error}`);
+
+function convertPNGtoJPGTx(pngFilePath) {  
+  return new Promise((resolve, rejedct) => {
+    const pngShortName = getShortName(pngFilePath);
+    const jpgFilePath  = getUniqueFileName(pngFilePath,'.jpg','.txt');
+    const txtFilePath  = modifyFilePathExtension(jpgFilePath,'.txt');
+    
+    console.logx(WAIT|VERB,`extracting WebUI prompt from ${pngShortName}`);
+    const text = extractTextFromPNG(pngFilePath);
+    if (text.parameters === undefined) {
+      console.logx(ERROR,`file ${pngShortName} don´t have WebUI prompt info`);
+      resolve();
+      return;
+    }
+    fs.writeFile(txtFilePath, text.parameters, (error) => {
+      if (error) { reject(error); return; }
     });
-  */
+
+    console.logx(WAIT|VERB,`converting ${pngShortName} to JPG`);
+    sharp(pngFilePath).jpeg().toFile(jpgFilePath, (error) => {
+      if (error) { reject(error); return; }
+    });
+    
+    console.logx(CHECK, `file ${pngShortName} successfully converted to JPG+TXT`);
+    resolve();
+  });
+  
 }
 
 function verifyJPGTxName(txtFilePath) {
@@ -196,7 +271,7 @@ requireModules([ 'fs', 'path', 'sharp' ]);
 const fs    = require('fs');
 const path  = require('path');
 const sharp = require('sharp');
-console.logx(CHECK, 'all modules loaded successfully');
+console.logx(CHECK|VERB, 'all modules loaded successfully');
 
 // 1) convert PNG files to JPG+TXT 
 //     * find a valid name for the new JPG+TXT
@@ -212,5 +287,15 @@ console.logx(CHECK, 'all modules loaded successfully');
 //       }
 // 3) ....
 //
-findFiles(IMAGEDB_MODEL_DIR,'*.PNG').forEach(convertPNGtoJPGTx);
-findFiles(IMAGEDB_MODEL_DIR,'*.TXT').forEach(verifyJPGTxName);
+//findFiles(IMAGEDB_MODEL_DIR,'*.PNG').forEach(convertPNGtoJPGTx);
+//findFiles(IMAGEDB_MODEL_DIR,'*.TXT').forEach(verifyJPGTxName);
+
+let actions = findFiles(IMAGEDB_MODEL_DIR,'*.PNG').map(convertPNGtoJPGTx); 
+Promise.all(actions)
+  .then(() => {
+    console.logx(CHECK,`${actions.length} files converted to JPG+TXT`);
+  })
+  .catch((error) => {
+    console.logx(ERROR,error);
+  });
+  
