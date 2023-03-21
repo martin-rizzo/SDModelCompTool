@@ -9,8 +9,17 @@
 const IMAGEDB_DIR           = 'public/imagedb/'
 const IMAGEDB_MODEL_DIR     = IMAGEDB_DIR + 'model-prompts/';
 const IMAGEDB_EMBEDDING_DIR = IMAGEDB_DIR + 'embedding-prompts/'
+const TRASH_DIR             = 'deleted_files/'
 
 //--------------------------- HELPER FUNCTIONS ----------------------------//
+
+Array.prototype.forEachFile = function(callback) {
+  let promises = [];
+  for (let i = 0; i < this.length; i++) {
+    promises.push( callback(this[i]) );
+  }
+  return Promise.all(promises);
+};
 
 /**
  * Takes an array of module names as input and tries to require them. If any
@@ -95,11 +104,17 @@ function modifyFilePathExtension(filePath, extension) {
  * Returns a unique file name based on the path to the original file.
  * If a file with the same name already exists, a number is added to the
  * end of the name until a file name that is not in use is found.
- * @param {string} filePath - Path to the original file.
+ *
+ * If 'extension1' is provided, the function searches for a unique file name
+ * with that extension. If both 'extension1' and 'extension2' are provided,
+ * it searches for a unique file name that is available with both extensions.
+
+ * @param {string} filePath     - Path to the original file.
+ * @param {string} [extension1] - Optional ext to use for the new file.
+ * @param {string} [extension2] - Optional second ext to use for the new file.
  * @returns {string} - Path to the file with unique name.
- */
-function getUniqueFileName(filePath, extension1, extension2) {
-  
+*/
+function findUniqueFileName(filePath, extension1, extension2) {
   const parsedPath = path.parse(filePath);
   if (extension1 === undefined) { extension1 = parsedPath.ext; }
   let newFilePath1 = modifyFilePathExtension(filePath, extension1);
@@ -232,70 +247,74 @@ function extractTextFromPNG(filePath) {
 
 //------------------------------ OPERATIONS -------------------------------//
 
-
-function convertPNGtoJPGTx(pngFilePath) {  
-  return new Promise((resolve, rejedct) => {
-    const pngShortName = getShortName(pngFilePath);
-    const jpgFilePath  = getUniqueFileName(pngFilePath,'.jpg','.txt');
-    const txtFilePath  = modifyFilePathExtension(jpgFilePath,'.txt');
-    
-    console.logx(WAIT|VERB,`extracting WebUI prompt from ${pngShortName}`);
-    const text = extractTextFromPNG(pngFilePath);
-    if (text.parameters === undefined) {
-      console.logx(ERROR,`file ${pngShortName} don´t have WebUI prompt info`);
-      resolve();
-      return;
-    }
-    fs.writeFile(txtFilePath, text.parameters, (error) => {
-      if (error) { reject(error); return; }
-    });
-
-    console.logx(WAIT|VERB,`converting ${pngShortName} to JPG`);
-    sharp(pngFilePath).jpeg().toFile(jpgFilePath, (error) => {
-      if (error) { reject(error); return; }
-    });
-    
-    console.logx(CHECK, `file ${pngShortName} successfully converted to JPG+TXT`);
-    resolve();
-  });
-  
+function sendFileToTrashSync(filePath) {
+  const shortName = getShortName(filePath);
+  const fileName  = path.basename(filePath);
+  const trashPath = findUniqueFileName(path.join(TRASH_DIR, fileName));
+  if (!fs.existsSync(TRASH_DIR)) { fs.mkdirSync(TRASH_DIR); }
+  fs.renameSync(filePath, trashPath);
+  console.logx(CHECK|VERB,`file ${shortName} has been moved to trash folder`);
 }
 
-function verifyJPGTxName(txtFilePath) {
+async function convertPNGtoJPGTx(pngFilePath) {  
+  const pngShortName = getShortName(pngFilePath);
+  const jpgFilePath  = findUniqueFileName(pngFilePath,'.jpg','.txt');
+  const txtFilePath  = modifyFilePathExtension(jpgFilePath,'.txt');
   
+  console.logx(WAIT|VERB,`extracting WebUI prompt from ${pngShortName}`);
+  const text = extractTextFromPNG(pngFilePath);
+  if (text.parameters === undefined) {
+    throw new Error(`file ${pngShortName} don´t have WebUI prompt info`);
+  }
+
+  console.logx(WAIT|VERB,`converting ${pngShortName} to JPG`);
+  const jpgBuffer = await sharp(pngFilePath).jpeg().toBuffer();
+  
+  fs.writeFileSync(jpgFilePath, jpgBuffer);
+  fs.writeFileSync(txtFilePath, text.parameters);
+  sendFileToTrashSync(pngFilePath);
+  console.logx(CHECK, `file ${pngShortName} successfully converted to JPG+TXT`);
+}  
+
+async function verifyJPGTxName(txtFilePath) {
+  console.log(txtFilePath);
 }
 
 //================================= START =================================//
+
+// 1) convert PNG files to JPG+TXT 
+//     X find a valid name for the new JPG+TXT
+//     X generate TXT from PNG chunk text data
+//     X generate JPG from PNG image
+//     X send PNG file to trash
+// 2) adjust JPG+TXT names
+//     - get "model" field from TXT
+//     - if "model" field do not exist -> error + move new jpg+txt to trash
+//     - if "model" != filename {
+//        - if "model".jpg+txt already exists -> move old jpg+txt to trash
+//        - rename JPG+TXT as "model".jpg+txt
+//       }
+// 3) ....
+//
+async function main()
+{ 
+  const pngFiles = findFiles(IMAGEDB_MODEL_DIR,'*.PNG');
+  await pngFiles.forEachFile(convertPNGtoJPGTx);
+  console.logx(CHECK,`${pngFiles.length} files converted to JPG+TXT`);
+
+  const jpgtxFiles = findFiles(IMAGEDB_MODEL_DIR,'*.TXT');
+  await jpgtxFiles.forEachFile(verifyJPGTxName);
+  console.logx(CHECK,`${jpgtxFiles.length} JPG+TXT files verified`);
+}
+
 
 requireModules([ 'fs', 'path', 'sharp' ]);
 const fs    = require('fs');
 const path  = require('path');
 const sharp = require('sharp');
 console.logx(CHECK|VERB, 'all modules loaded successfully');
-
-// 1) convert PNG files to JPG+TXT 
-//     * find a valid name for the new JPG+TXT
-//     * generate TXT from PNG chunk text data
-//     * generate JPG from PNG image
-//     * move PNG file to trash
-// 2) adjust JPG+TXT names
-//     * get "model" field from TXT
-//     * if "model" field do not exist -> error + move new jpg+txt to trash
-//     * if "model" != filename {
-//        * if "model".jpg+txt already exists -> move old jpg+txt to trash
-//        * rename JPG+TXT as "model".jpg+txt
-//       }
-// 3) ....
-//
-//findFiles(IMAGEDB_MODEL_DIR,'*.PNG').forEach(convertPNGtoJPGTx);
-//findFiles(IMAGEDB_MODEL_DIR,'*.TXT').forEach(verifyJPGTxName);
-
-let actions = findFiles(IMAGEDB_MODEL_DIR,'*.PNG').map(convertPNGtoJPGTx); 
-Promise.all(actions)
-  .then(() => {
-    console.logx(CHECK,`${actions.length} files converted to JPG+TXT`);
-  })
-  .catch((error) => {
-    console.logx(ERROR,error);
+main()
+  .then(() => {console.logx(CHECK|VERB,'program finalized without errors')})
+  .catch(error => {
+    console.error(error);
   });
-  

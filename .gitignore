@@ -6,6 +6,9 @@
 /public/imagedb/embedding-prompts/**/*.PNG
 /public/imagedb/embedding-prompts/**/*.png
 
+# imagedb deleted files
+/deleted_files
+
 # dependencies
 /node_modules
 /.pnp
