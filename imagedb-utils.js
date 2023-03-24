@@ -4,9 +4,23 @@
 const fs   = require('fs');
 const path = require('path');
 
-const TRASH_DIR = 'deleted_files/';
+//---------------------------- HELPER FUNCTIONS ---------------------------//
 
-//--------------------------- HELPER FUNCTIONS ----------------------------//
+/**
+ * Get a shortened version of a full path string
+ * @param {string} fullPath - The full path to the file
+ * @returns {string} - The shortened path (dir name + file name and extension)
+ */
+function getDisplayName(fullPath) {
+  const lengthLimit          = 40;
+  const directoryName        = path.basename(path.dirname(fullPath));
+  const fileNameAndExtension = path.basename(fullPath);
+  let shortenedPath = `${directoryName}/${fileNameAndExtension}`;
+  if (shortenedPath.length > lengthLimit) {
+    shortenedPath = `...${shortenedPath.slice(3-lengthLimit)}`;
+  }
+  return '"'+shortenedPath+'"';
+}
 
 /**
  * Calculates the CRC32 value of a buffer or the concatenation of two buffers.
@@ -107,41 +121,12 @@ function findUniqueFileName(filePath, extension1, extension2) {
   return newFilePath1;
 }
 
-/**
- * Moves a file to the trash folder synchronously.
- * @param {string} filePath - The path of the file to be moved to the trash folder.
- */
-function moveFileToTrashSync(filePath) {
-  const shortName = getShortName(filePath);
-  const fileName  = path.basename(filePath);
-  const trashPath = findUniqueFileName(path.join(TRASH_DIR, fileName));
-  if (!fs.existsSync(TRASH_DIR)) { fs.mkdirSync(TRASH_DIR); }
-  fs.renameSync(filePath, trashPath);
-  console.logx(CHECK|VERB,`file ${shortName} has been ${MOVED_TO_TRASH}`);
-}
-
-/**
- * Get a shortened version of a full path string
- * @param {string} fullPath - The full path to the file
- * @returns {string} - The shortened path (dir name + file name and extension)
- */
-function getDisplayName(fullPath) {
-  const lengthLimit          = 40;
-  const directoryName        = path.basename(path.dirname(fullPath));
-  const fileNameAndExtension = path.basename(fullPath);
-  let shortenedPath = `${directoryName}/${fileNameAndExtension}`;
-  if (shortenedPath.length > lengthLimit) {
-    shortenedPath = `...${shortenedPath.slice(3-lengthLimit)}`;
-  }
-  return '"'+shortenedPath+'"';
-}
 
 
 module.exports = {
+  getDisplayName,
   crc32,
   findFiles,
   modifyFilePathExtension,
   findUniqueFileName,
-  moveFileToTrashSync,
-  getDisplayName
 };

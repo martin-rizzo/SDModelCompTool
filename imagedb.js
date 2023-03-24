@@ -8,7 +8,36 @@
 const IMAGEDB_DIR           = 'public/imagedb/';
 const IMAGEDB_MODEL_DIR     = IMAGEDB_DIR + 'model-prompts/';
 const IMAGEDB_EMBEDDING_DIR = IMAGEDB_DIR + 'embedding-prompts/';
+const TRASH_DIR             = 'deleted_files/';
 const MOVED_TO_TRASH        = 'moved to the trash directory';
+
+//---------------------------- SCREEN MESSAGES ----------------------------//
+
+const CHECK = 0, WARN = 1, ERROR = 2, WAIT = 3, VERB = 4, VVV = 8;
+
+/**
+ * Logs messages with different styles.
+ * @param {string} style - The style of message: CHECK, WARN, ERROR, WAIT.
+ * @param {string} message - The message to be logged.
+ */
+console.logx = function (style, message, description) {
+  const verboseMode = 0;
+  if (verboseMode === 0 && style>=VERB) { return; }
+  if (verboseMode === 1 && style>=VVV)  { return; }
+  switch (style % VERB) {
+    case CHECK:
+      console.log(' \x1b[32m%s\x1b[0m', `✓ ${message}`); break;
+    case WARN:
+      console.log(' \x1b[33m%s\x1b[0m', `! ${message}`); break;
+    case ERROR:
+      console.log(' \x1b[31m%s\x1b[0m', `x ${message}`); break;
+    case WAIT:
+      console.log(' \x1b[33m%s\x1b[0m', `. ${message}...`); break;
+  }
+  if (description !== undefined) {
+    console.log(`   ERROR: ${description}`);
+  }
+}
 
 //--------------------------- HELPER FUNCTIONS ----------------------------//
 
@@ -36,33 +65,17 @@ function requireModules(modules) {
   }
 }
 
-//---------------------------- SCREEN MESSAGES ----------------------------//
-
-const CHECK = 0, WARN = 1, ERROR = 2, WAIT = 3, VERB = 4, VVV = 5;
-
 /**
- * Logs messages with different styles.
- * @param {string} style - The style of message: CHECK, WARN, ERROR, WAIT.
- * @param {string} message - The message to be logged.
+ * Moves a file to the trash folder synchronously.
+ * @param {string} filePath - The path of the file to be moved to the trash folder.
  */
-console.logx = function (style, message, description) {
-  const verboseMode = false;
-  if (style>=VERB) {
-    if (verboseMode) { style-=VERB; } else { return; }
-  }
-  switch (style) {
-    case CHECK:
-      console.log(' \x1b[32m%s\x1b[0m', `✓ ${message}`); break;
-    case WARN:
-      console.log(' \x1b[33m%s\x1b[0m', `! ${message}`); break;
-    case ERROR:
-      console.log(' \x1b[31m%s\x1b[0m', `x ${message}`); break;
-    case WAIT:
-      console.log(' \x1b[33m%s\x1b[0m', `. ${message}...`); break;
-  }
-  if (description !== undefined) {
-    console.log(`   ${description}`);
-  }
+function moveFileToTrashSync(filePath) {
+  const displayName = utils.getDisplayName(filePath);
+  const fileName    = path.basename(filePath);
+  const trashPath   = utils.findUniqueFileName(path.join(TRASH_DIR, fileName));
+  if (!fs.existsSync(TRASH_DIR)) { fs.mkdirSync(TRASH_DIR); }
+  fs.renameSync(filePath, trashPath);
+  console.logx(CHECK|VERB,`file ${displayName} has been ${MOVED_TO_TRASH}`);
 }
 
 //---------------------------------- PNG ----------------------------------//
@@ -185,18 +198,18 @@ async function convertPNGtoJPGTx(pngFilePath) {
     const jpgFilePath = utils.findUniqueFileName(pngFilePath,'.jpg','.txt');
     const txtFilePath = utils.modifyFilePathExtension(jpgFilePath,'.txt');
     
-    console.logx(WAIT|VERB,`extracting WebUI prompt from ${displayName}`);
+    console.logx(WAIT|VVV,`extracting WebUI prompt from ${displayName}`);
     const text = extractTextFromPNG(pngFilePath);
     if (text.parameters === undefined) {
-      utils.moveFileToTrashSync(pngFilePath);
+      moveFileToTrashSync(pngFilePath);
       throw new Error('file don´t have WebUI prompt info, '+
                       `it was ${MOVED_TO_TRASH}`);
     }
-    console.logx(WAIT|VERB,`converting ${displayName} to JPG`);
+    console.logx(WAIT|VVV,`converting ${displayName} to JPG`);
     const jpgBuffer = await sharp(pngFilePath).jpeg().toBuffer();
     fs.writeFileSync(jpgFilePath, jpgBuffer);
     fs.writeFileSync(txtFilePath, text.parameters);
-    utils.moveFileToTrashSync(pngFilePath);
+    moveFileToTrashSync(pngFilePath);
   }
   catch (err) {
     result.errorMessage = err.message;
@@ -213,10 +226,11 @@ async function convertAllPNGtoJPGTx(directoryPath) {
   const promises = pngFiles.map(convertPNGtoJPGTx);
   const results  = await Promise.all(promises);
   if (results.length === 0) { return; }
-  
-  const count = results.reduce((count, result) => {
+  const count = results.reduce((count, result) =>
+  {
     if (result.errorMessage === undefined) {
-      console.logx(CHECK,`file ${result.displayName} successfully converted to JPG+TXT`);
+      console.logx(CHECK|VERB,
+                   `file ${result.displayName} successfully converted to JPG+TXT`);
       count.ok++;
     } else {
       console.logx(ERROR,`file ${result.displayName} cannot be converted to JPG+TXT`,
@@ -227,9 +241,9 @@ async function convertAllPNGtoJPGTx(directoryPath) {
   }, { ok:0, error:0 });
   //-- print final result --//
   if (count.error === 0) {
-    console.logx(CHECK,`${count.ok} files converted to JPG+TXT`);
+    console.logx(CHECK,`${count.ok} PNG files converted to JPG+TXT`);
   } else {
-    console.logx(WARN,`${count.ok} files converted to JPG+TXT with ${count.error} errors`);
+    console.logx(WARN,`${count.ok} PNG files converted to JPG+TXT with ${count.error} errors`);
   }
 }
 
@@ -244,13 +258,13 @@ async function verifyJPGTxName(txtFilePath) {
   
   if (!fs.existsSync(jpgFilePath)) {
     console.logx(ERROR, `file ${displayName} does not have any related JPG file and will therefore be deleted`);
-    utils.moveFileToTrashSync(txtFilePath);
+    moveFileToTrashSync(txtFilePath);
     return;
   }
   if (modelHash === undefined) {
     console.logx(ERROR, `file ${displayName} has an unknown format and will be deleted along with its related JPG file`);
-    utils.moveFileToTrashSync(txtFilePath);
-    utils.moveFileToTrashSync(jpgFilePath);
+    moveFileToTrashSync(txtFilePath);
+    moveFileToTrashSync(jpgFilePath);
     return;   
   }
   if (fileName === modelHash) {
@@ -262,12 +276,12 @@ async function verifyJPGTxName(txtFilePath) {
   const newJpgFilePath = path.join(directory, modelHash+'.jpg');
   const newTxtFilePath = path.join(directory, modelHash+'.txt');
   if (fs.existsSync(newJpgFilePath)) {
-    utils.moveFileToTrashSync(newJpgFilePath);
+    moveFileToTrashSync(newJpgFilePath);
     const jpgDisplayName = utils.getDisplayName(newJpgFilePath);
     console.logx(WARN, `old file ${jpgDisplayName} has been replaced by a new one`);
   }
   if (fs.existsSync(newTxtFilePath)) {
-    utils.moveFileToTrashSync(newTxtFilePath);
+    moveFileToTrashSync(newTxtFilePath);
     const txtDisplayName = utils.getDisplayName(newTxtFilePath);
     console.logx(WARN, `old file ${txtDisplayName} has been replaced by a new one`);
   }  
@@ -321,14 +335,8 @@ main()
 //
 async function main()
 { 
-  //const pngFiles = utils.findFiles(IMAGEDB_MODEL_DIR,'*.PNG');
-  //await pngFiles.forEachFile(convertPNGtoJPGTx);
-  //console.logx(CHECK,`${pngFiles.length} files converted to JPG+TXT`);
   await convertAllPNGtoJPGTx(IMAGEDB_MODEL_DIR);
-
-  const jpgtxFiles = utils.findFiles(IMAGEDB_MODEL_DIR,'*.TXT');
-  await jpgtxFiles.forEachFile(verifyJPGTxName);
-  console.logx(CHECK,`${jpgtxFiles.length} JPG+TXT files verified`);
+  await verifyAllJPGTxNames(IMAGEDB_MODEL_DIR);
 }
 
 
